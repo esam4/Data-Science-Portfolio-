@@ -1,0 +1,488 @@
+---
+title: "Supervised machine learning for predicting 100km ultra-marathon times"
+author: "Eric Samtleben"
+date: "2024-01-03"
+output: github_document
+always_allow_html: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+
+
+```{r}
+library(readxl)
+ultrarunning_no_totals <- read_excel("C:/Users/Eric/OneDrive/Documents/Trent/Masters 2021 - 2023/Professional Opportunities/TSHS/EI and Ultra-running data set submission/Revisions rd 3/ultrarunning - no totals.xlsx")
+
+data <- ultrarunning_no_totals
+
+```
+
+# Project Background 
+Previous research has demonstrated that greater emotional regulation can contribute to faster half marathon times. The goal of the present study was to build on this research by examining the role of emotional intelligence in ultra marathon performance. Specifically, I sought to test the hypothesis that greater levels of emotional regulation would contribute to faster 100km personal best times after course features, training volume, age, experience, and biological sex were accounted for. It should be noted that this data was collected during the COVID-19 pandemic heavily impacting methodological choices (e.g., online data collection vs live event; personal best times vs event finish time). 
+
+# Missing data analysis 
+Here I examine the raw data for completeness. From the analysis we can see that the majority of the missing data comes toward the end of the questionnaire.
+```{r}
+library(naniar)
+
+vis_miss(data)#provides a heatmap of missing data 
+case_missing <- miss_case_summary(data)#returns the percent and number of missing for each case 
+var_missing <- miss_var_summary(data) #returns the percent and number of missing values for each variable column 
+
+```
+
+# Scoring string variables 
+Here I am scoring each item of the situational test for emotional understanding (STEU) and the situational test for emotion management (STEM). Both measures have string responses which need to be recoded to numeric values for scoring. After a numeric variable has been created from each string variable I check the recode by comparing NA's in the new numeric columns against the original string value; if the original string value is a NA the recode was successful, if the original string value was text I take that text and use it in the recode.Mean replacement and imputation were deemed inappropriate to deal with the missing values for the STEM and STEU as questions were not scored on a continuum but given points for correct answer and no points for incorrect answers, thus mean replacement risked imputing impossible fractions for the STEM and imputation risked artificially inflating or deflating scores as an wrong prediction could cost or add a entire point to the total. For this reason the data was left as NA. 
+```{r}
+library(tidyverse)
+
+#recoding STEU
+data <- data %>% 
+  mutate(STEU.Q1_NUM = case_when(STEU.Q1 == "Surprise" ~ 0, 
+                                STEU.Q1 == "Pride" ~ 1,
+                                STEU.Q1 == "Relief" ~ 0,
+                                STEU.Q1 == "Hope" ~ 0,
+                                STEU.Q1 == "Joy" ~ 0), 
+        STEU.Q2_NUM = case_when(STEU.Q2 == "Distress" ~ 0,
+                                STEU.Q2 == "Joy" ~ 0,
+                                STEU.Q2 == "Surprise" ~ 0,
+                                STEU.Q2 == "Hope" ~ 1,
+                                STEU.Q2 == "Fear" ~ 0),
+        STEU.Q3_NUM = case_when(STEU.Q3 == "Anger" ~ 0,
+                                STEU.Q3 == "Excitement" ~ 0,
+                                STEU.Q3 == "Contempt" ~ 1,
+                                STEU.Q3 == "Shame" ~ 0,
+                                STEU.Q3 == "Horror" ~ 0),
+         STEU.Q4_NUM = case_when(STEU.Q4 == "Depressed" ~ 0,
+                                STEU.Q4 == "Frustrated" ~ 0,
+                                STEU.Q4 == "Angry" ~ 1,
+                                STEU.Q4 == "Contemptuous" ~ 0,
+                                STEU.Q4 == "Distressed" ~ 0),
+         STEU.Q5_NUM = case_when(STEU.Q5 == "Dislike" ~ 1,
+                                STEU.Q5 == "Rage" ~ 0,
+                                STEU.Q5 == "Jealousy" ~ 0,
+                                STEU.Q5 == "Surprise" ~ 0,
+                                STEU.Q5 == "Anxiety" ~ 0),
+         STEU.Q6_NUM = case_when(STEU.Q6 == "Angry" ~ 0,
+                                STEU.Q6 == "Sad" ~ 1,
+                                STEU.Q6 == "Frustrated" ~ 0,
+                                STEU.Q6 == "Distressed" ~ 0,
+                                STEU.Q6 == "Ashamed" ~ 0),
+         STEU.Q7_NUM = case_when(STEU.Q7 == "She didn't make an offer on a house she wanted, and now she is trying to find out if it is too late." ~ 0,
+                                STEU.Q7 == "She found a house she liked that she didn't think she would find" ~ 0,
+                                STEU.Q7 == "She couldn't make an offer on a house she liked because the bank didn't get her the money in time." ~ 0,
+                                STEU.Q7 == "She didn't make an offer on a house she liked and now someone else has bought it" ~ 1,
+                                STEU.Q7 == "She made an offer on a house and is waiting to see if it is accepted" ~ 0),
+         STEU.Q8_NUM = case_when(STEU.Q8 == "Her work-mate told a silly joke." ~ 0,
+                                STEU.Q8 == "She was working on a new task she hadn't dealt with before." ~ 0,
+                                STEU.Q8 == "She found some results that were different from what she thought they would be." ~ 1,
+                                STEU.Q8 == "She realized she would not be able to complete her work." ~ 0,
+                                STEU.Q8 == "She had to do a task she didn't normally do at work." ~ 0),
+         STEU.Q9_NUM = case_when(STEU.Q9 == "Hope" ~ 0,
+                                STEU.Q9 == "Pride" ~ 0,
+                                STEU.Q9 == "Gratitude" ~ 1,
+                                STEU.Q9 == "Surprise" ~ 0,
+                                STEU.Q9 == "Relief" ~ 0),
+         STEU.Q10_NUM = case_when(STEU.Q10 == "Joy" ~ 0,
+                                  STEU.Q10 == "Hope" ~ 0,
+                                  STEU.Q10 == "Relief" ~ 0,
+                                  STEU.Q10 == "Pride" ~ 1,
+                                  STEU.Q10 == "Surprise" ~ 0),
+         STEU.Q11_NUM = case_when(STEU.Q11 == "Regret " ~ 0,
+                                  STEU.Q11 == "Hope" ~ 0,
+                                  STEU.Q11 == "Joy" ~ 0,
+                                  STEU.Q11 == "Sadness" ~ 0,
+                                  STEU.Q11 == "Relief" ~ 1),
+         STEU.Q12_NUM = case_when(STEU.Q12 == "Distressed" ~ 0,
+                                  STEU.Q12 == "Confused" ~ 0,
+                                  STEU.Q12 == "Surprised" ~ 0,
+                                  STEU.Q12 == "Relieved" ~ 0,
+                                  STEU.Q12 == "Frustrated" ~ 1), 
+         STEU.Q13_NUM = case_when(STEU.Q13 == "Anxiety" ~ 0,
+                                  STEU.Q13 == "Dislike" ~ 1,
+                                  STEU.Q13 == "Surprise" ~ 0,
+                                  STEU.Q13 == "Jealousy" ~ 0,
+                                  STEU.Q13 == "Rage" ~ 0),
+        STEU.Q14_NUM = case_when(STEU.Q14 == "His wife talked a lot, which did not usually happen" ~ 0,
+                                STEU.Q14 == "His wife talked about things that were different to what they usually discussed." ~ 0,
+                                STEU.Q14 == "His wife told him that she might have some bad news." ~ 0,
+                                STEU.Q14 == "His wife told Quan some news that was not what he thought it would be." ~ 1,
+                                STEU.Q14 == "His wife told a funny story." ~ 0),
+        STEU.Q15_NUM = case_when(STEU.Q15 == "Joy" ~ 0,
+                                STEU.Q15 == "Hope" ~ 0,
+                                STEU.Q15 == "Regret" ~ 1,
+                                STEU.Q15 == "Relief" ~ 0,
+                                STEU.Q15 == "Sadness" ~ 0),
+        STEU.Q16_NUM = case_when(STEU.Q16 == "Ashamed" ~ 0,
+                                STEU.Q16 == "Sad" ~ 1,
+                                STEU.Q16 == "Angry" ~ 0,
+                                STEU.Q16 == "Distressed" ~ 0,
+                                STEU.Q16 == "Frustrated" ~ 0),
+       STEU.Q17_NUM = case_when(STEU.Q17 == "Angry" ~ 0,
+                                STEU.Q17 == "Scared" ~ 0,
+                                STEU.Q17 == "Sad" ~ 0,
+                                STEU.Q17 == "Distressed" ~ 1,
+                                STEU.Q17 == "Guilty" ~ 0),
+       STEU.Q18_NUM = case_when(STEU.Q18 == "Angry" ~ 1,
+                                STEU.Q18 == "Contemptuous" ~ 0,
+                                STEU.Q18 == "Distress" ~ 0,
+                                STEU.Q18 == "Depressed" ~ 0,
+                                STEU.Q18 == "Frustrated" ~ 0),
+       STEU.Q19_NUM = case_when(STEU.Q19 == "He did not apply for a position he wanted, and has found out that someone else less qualified got the job." ~ 1,
+                                STEU.Q19 == "He did not apply for a position he wanted, and has started looking for a similar position." ~ 0,
+                                STEU.Q19 == "He found out that opportunities for promotion have dried up" ~ 0,
+                                STEU.Q19 == "He found out that he didn't get a position he thought he would get." ~ 0,
+                                STEU.Q19 == "He didn't hear about a position he could have applied for and now it is too late" ~ 0))
+# checks what the answer was in original variable if the question scores as n/a in our new NUM variable to determine if there is a typo in the recode 
+data %>% 
+  filter(is.na(STEU.Q19_NUM)) %>% # insert numeric recode 
+  dplyr::select(STEU.Q19) #insert original string variable 
+
+data <- data %>% # total for observed scores 
+  mutate(STEU.TTL = STEU.Q1_NUM + STEU.Q2_NUM + STEU.Q3_NUM + STEU.Q4_NUM + STEU.Q5_NUM + STEU.Q6_NUM + STEU.Q7_NUM + STEU.Q8_NUM + STEU.Q9_NUM + STEU.Q10_NUM + STEU.Q11_NUM + STEU.Q12_NUM + STEU.Q13_NUM + STEU.Q14_NUM + STEU.Q15_NUM + STEU.Q16_NUM + STEU.Q17_NUM + STEU.Q18_NUM + STEU.Q19_NUM) 
+
+
+# recoding STEM
+data <- data %>% 
+  mutate(STEM.Q1_NUM = case_when(STEM.Q1 == "Just accept that she is gone and the friendship is over." ~ 0, 
+                            STEM.Q1 == "Ring Wai-Hin and ask her out for lunch or coffee to catch up." ~ 0,
+                            STEM.Q1 == "Contact Wai-Hin and arrange to catch up but also make friends with her replacement." ~ 11/12,
+                            STEM.Q1 == "Spend time getting to know the other people in the office, and strike up new friendships" ~ 1/12), 
+         STEM.Q2_NUM = case_when(STEM.Q2 == "Carefully consider his options and discuss it with his family." ~ 3/4,
+                            STEM.Q2 == "Talk to his boss or the management about it." ~ 1/4,
+                            STEM.Q2 == "Accept the situation, but still feel bitter about it." ~ 0,
+                            STEM.Q2 == "Walk out of that job." ~ 0),
+         STEM.Q3_NUM = case_when(STEM.Q3 == "Have fun with his friends outside of work hours." ~ 0,
+                            STEM.Q3 == "Concentrate on doing his work well at the new job" ~ 2/12,
+                            STEM.Q3 == "Make an effort to talk to people and be friendly himself." ~ 10/12,
+                            STEM.Q3 == "Leave the job and find one with a better environment." ~ 0),
+         STEM.Q4_NUM = case_when(STEM.Q4 == "Try to adjust to life in the new city by joining clubs and activities there." ~ 0,
+                            STEM.Q4 == "He should make the effort to contact them, but also try to meet people in his new city." ~ 1,
+                            STEM.Q4 == "Let go of his old friends, who have shown themselves to be unreliable." ~ 0,
+                            STEM.Q4 == "Tell his friends he is disappointed in them for not contacting him" ~ 0),
+          STEM.Q5_NUM = case_when(STEM.Q5 == "Nothing – it will sort itself out soon enough." ~ 0, 
+                            STEM.Q5 == "Tell his family he feels left out." ~ 2/12,
+                            STEM.Q5 == "Spend time listening and getting involved again" ~ 3/4,
+                            STEM.Q5 == "Reflect that relationships can change with time" ~ 1/12),
+          STEM.Q6_NUM = case_when(STEM.Q6 == "Realize he shouldn’t have applied for the job if he didn’t want to leave." ~ 0,
+                            STEM.Q6 == "Set up a system for staying in touch, like weekly phone calls or emails." ~ 10/12,
+                            STEM.Q6 == "Think about the great opportunities this change offers." ~ 2/12,
+                            STEM.Q6 == "Don’t take the position." ~ 0),
+         STEM.Q7_NUM = case_when(STEM.Q7 == "Let herself cry and express emotion for as long as she feels like." ~ 1/12,
+                            STEM.Q7 == "Speak to other family to calm herself and find out what is happening, then visit the hospital" ~ 11/12,
+                            STEM.Q7 == "There is nothing she can do." ~ 0,
+                            STEM.Q7 == "Visit the hospital and ask staff about their condition." ~ 0),
+         STEM.Q8_NUM = case_when(STEM.Q8 == "Realize that he is growing up and might not want to spend so much time with his family any more." ~ 0,
+                            STEM.Q8 == "Make plans to drop by and visit him in person and have a good chat." ~ 1/4,
+                            STEM.Q8 == "Understand that relationships change, but keep calling him from time to time." ~ 3/4,
+                            STEM.Q8 == "Be upset about it, but realize there is nothing she can do" ~ 0),
+         STEM.Q9_NUM = case_when(STEM.Q9 == "Tell her sister-in-law these comments upset her." ~ 3/4,
+                            STEM.Q9 == "Get a new babysitter" ~ 0,
+                            STEM.Q9 == "Be grateful her house is being cleaned for free" ~ 2/12,
+                            STEM.Q9 == "Tell her only to baby-sit, not to clean" ~ 1/12),
+         STEM.Q10_NUM = case_when(STEM.Q10 == "Find out what is happening and discuss his concerns with his family." ~ 3/4,
+                            STEM.Q10 == "Try to keep the company afloat by working harder." ~ 0,
+                            STEM.Q10 == "Start applying for other jobs." ~ 1/4,
+                            STEM.Q10 == "Think of these events as an opportunity for a new start" ~ 0),
+         STEM.Q11_NUM = case_when(STEM.Q11 == "Talk to her workmates, try to create social contacts and make friends." ~ 11/12,
+                            STEM.Q11 == "Start looking for a new job so she can leave that environment." ~ 0,
+                            STEM.Q11 == "Just give it time, and things will be okay." ~ 0,
+                            STEM.Q11 == "Concentrate on her outside-work friends and colleagues from previous jobs" ~ 1/12),
+         STEM.Q12_NUM = case_when(STEM.Q12 == "Talk to her friends or workmates about it." ~ 0,
+                            STEM.Q12 == "Ignore the incident and move on to her next task." ~ 0,
+                            STEM.Q12 == "Calm down by taking deep breaths or going for a short walk." ~ 1/12,
+                            STEM.Q12 == "Think that she has been successful in the past and this client being difficult is not her fault" ~ 11/12), 
+         STEM.Q13_NUM = case_when(STEM.Q13 == "Go to the cafe or socialize with other workers." ~ 2/12,
+                            STEM.Q13 == "Don’t worry about it, ignore the changes and let Blair be." ~ 0, 
+                            STEM.Q13 == "Not talk to Blair again." ~ 0,
+                            STEM.Q13 == "Invite Blair again, maybe rescheduling for another time." ~ 10/12),
+         STEM.Q14_NUM = case_when(STEM.Q14 == "Forget about Dara." ~ 0,
+                            STEM.Q14 == "Spend time with other friends, keeping herself busy." ~ 1/12,
+                            STEM.Q14 == "Think that Dara and her partner will return soon." ~ 0,
+                            STEM.Q14 == "Make sure she keeps in contact through email, phone or letter writing" ~ 11/12),
+         STEM.Q15_NUM = case_when(STEM.Q15 == "Explain the lack of resources to her boss or to management." ~ 2/12,
+                            STEM.Q15 == "Learn that she should plan ahead for next time." ~ 0,
+                            STEM.Q15 == "Document the lack of resources in her progress report." ~ 10/12,
+                            STEM.Q15 == "Don’t worry about it." ~ 0),
+        STEM.Q16_NUM = case_when(STEM.Q16 == "Talk the issue over with another friend." ~ 0,
+                            STEM.Q16 == "Angrily confront her friend about making such statements." ~ 0,
+                            STEM.Q16 == "Realize that children develop at different rates." ~ 1/4,
+                            STEM.Q16 == "Talk to a doctor about what the normal rates of development are" ~ 3/4),
+        STEM.Q17_NUM = case_when(STEM.Q17 == "Refuse to work the new shifts." ~ 0,
+                            STEM.Q17 == "Find out if there is some reasonable explanation for the shift changes." ~ 3/4,
+                            STEM.Q17 == "Tell the manager in charge of shifts that he is not happy about it." ~ 1/4,
+                            STEM.Q17 == "Grumpily accept the changes and do the shifts." ~ 0),
+        STEM.Q18_NUM = case_when(STEM.Q18 == "Cancel the trip and go home." ~ 0,
+                            STEM.Q18 == "Realize that it is time to give up the friendship and move on." ~ 0,
+                            STEM.Q18 == "Understand that people change, so move on, but remember the good times." ~ 11/12,
+                            STEM.Q18 == "Concentrate on her other, more rewarding friendships." ~ 1/12)) 
+
+# checks what the answer was in original variable if the question scores as n/a in our new NUM variable to determine if there is a typo in the recode 
+data %>% 
+  filter(is.na(STEM.Q18_NUM)) %>% # insert numeric recode 
+  dplyr::select(STEM.Q18) #insert original string variable 
+
+
+data <- data %>% # total for observed scores 
+  mutate(STEM.TTL = STEM.Q1_NUM + STEM.Q2_NUM + STEM.Q3_NUM + STEM.Q4_NUM + STEM.Q5_NUM + STEM.Q6_NUM + STEM.Q7_NUM + STEM.Q8_NUM + STEM.Q9_NUM + STEM.Q10_NUM + STEM.Q11_NUM + STEM.Q12_NUM + STEM.Q13_NUM + STEM.Q14_NUM + STEM.Q15_NUM + STEM.Q16_NUM + STEM.Q17_NUM + STEM.Q18_NUM) 
+
+
+
+```
+
+
+# Imputing missing data for TEI 
+Here I am using multiple imputation by chained equations (MICE) to replace the missing data based on the observed data. First, I create a subset containing only their the tei items. I then reverse score the appropriate items and impute missing values using MICE. 
+```{r}
+library(mice)
+# subsetting tei scores 
+tei <- data %>%
+  dplyr::select(starts_with("TEI"))
+
+#reverse scoring TEI items 
+tei <- tei %>% 
+  mutate(TEI.Q2 = dplyr::recode(TEI.Q2, `7` = 1, `6` = 2, `5` = 3, `4` = 4, `3` = 5, `2` = 6, `1` = 7),
+         TEI.Q4 = dplyr::recode(TEI.Q4, `7` = 1, `6` = 2, `5` = 3, `4` = 4, `3` = 5, `2` = 6, `1` = 7),
+         TEI.Q5 = dplyr::recode(TEI.Q5, `7` = 1, `6` = 2, `5` = 3, `4` = 4, `3` = 5, `2` = 6, `1` = 7),
+         TEI.Q7 = dplyr::recode(TEI.Q7, `7` = 1, `6` = 2, `5` = 3, `4` = 4, `3` = 5, `2` = 6, `1` = 7),
+         TEI.Q8 = dplyr::recode(TEI.Q8, `7` = 1, `6` = 2, `5` = 3, `4` = 4, `3` = 5, `2` = 6, `1` = 7),
+         TEI.Q10 = dplyr::recode(TEI.Q10, `7` = 1, `6` = 2, `5` = 3, `4` = 4, `3` = 5, `2` = 6, `1` = 7),
+         TEI.Q12 = dplyr::recode(TEI.Q12, `7` = 1, `6` = 2, `5` = 3, `4` = 4, `3` = 5, `2` = 6, `1` = 7),
+         TEI.Q13 = dplyr::recode(TEI.Q13, `7` = 1, `6` = 2, `5` = 3, `4` = 4, `3` = 5, `2` = 6, `1` = 7),
+         TEI.Q14 = dplyr::recode(TEI.Q14, `7` = 1, `6` = 2, `5` = 3, `4` = 4, `3` = 5, `2` = 6, `1` = 7),
+         TEI.Q16 = dplyr::recode(TEI.Q16, `7` = 1, `6` = 2, `5` = 3, `4` = 4, `3` = 5, `2` = 6, `1` = 7),
+         TEI.Q18 = dplyr::recode(TEI.Q18, `7` = 1, `6` = 2, `5` = 3, `4` = 4, `3` = 5, `2` = 6, `1` = 7),
+         TEI.Q22 = dplyr::recode(TEI.Q22, `7` = 1, `6` = 2, `5` = 3, `4` = 4, `3` = 5, `2` = 6, `1` = 7),
+         TEI.Q25 = dplyr::recode(TEI.Q25, `7` = 1, `6` = 2, `5` = 3, `4` = 4, `3` = 5, `2` = 6, `1` = 7),
+         TEI.Q26 = dplyr::recode(TEI.Q26, `7` = 1, `6` = 2, `5` = 3, `4` = 4, `3` = 5, `2` = 6, `1` = 7),
+         TEI.Q28 = dplyr::recode(TEI.Q28, `7` = 1, `6` = 2, `5` = 3, `4` = 4, `3` = 5, `2` = 6, `1` = 7))
+
+tei.impute <- tei %>%
+  mice() #performing mice 
+tei.impute<- complete(tei.impute) #returns imputed dataset 
+
+```
+
+Here I am creating tei total scores out of only observed data and imputed data. I then produce visualizations to see the effect of the imputation on the items and their totals. We can see the imputation was succcessful. 
+```{r}
+library(naniar)
+
+tei <- tei %>% # total for observed scores 
+  mutate(TEI.TTL = (TEI.Q1 + TEI.Q2 + TEI.Q3 + TEI.Q4 + TEI.Q5 + TEI.Q6 + TEI.Q7 + TEI.Q8 + TEI.Q9 + TEI.Q10 + TEI.Q11 + TEI.Q12 + TEI.Q13 + TEI.Q14 + TEI.Q15 + TEI.Q16 + TEI.Q17 + TEI.Q18 + TEI.Q19 + TEI.Q20 + TEI.Q21 + TEI.Q22 + TEI.Q23 + TEI.Q24 + TEI.Q25 + TEI.Q26 + TEI.Q27 + TEI.Q28 + TEI.Q29 + TEI.Q30)/30) 
+
+
+tei.impute <- tei.impute %>% # total for imputed scores 
+  mutate(TEI.TTL = (TEI.Q1 + TEI.Q2 + TEI.Q3 + TEI.Q4 + TEI.Q5 + TEI.Q6 + TEI.Q7 + TEI.Q8 + TEI.Q9 + TEI.Q10 + TEI.Q11 + TEI.Q12 + TEI.Q13 + TEI.Q14 + TEI.Q15 + TEI.Q16 + TEI.Q17 + TEI.Q18 + TEI.Q19 + TEI.Q20 + TEI.Q21 + TEI.Q22 + TEI.Q23 + TEI.Q24 + TEI.Q25 + TEI.Q26 + TEI.Q27 + TEI.Q28 + TEI.Q29 + TEI.Q30)/30) 
+
+
+vis_miss(tei) # observed scores only visual 
+vis_miss(tei.impute) # imputed scores visual 
+```
+
+Here I am checking to see if the total scores created from the imputed dataset differ from the one created using only the observed data. The results of the t-test indicate the imputed scores are roughly equal to the observed scores. 
+```{r}
+library(tidyverse)
+
+tei<- tei %>%
+  mutate(missing = ifelse(is.na(TEI.TTL), "yes", "no")) #creates grouping variable based on missing or not  
+
+tei.impute <- tei.impute %>%
+  mutate(missing = tei$missing) # moves the grouping variable 'missing' to the imputed data set  
+
+t.test(TEI.TTL ~ missing, data = tei.impute) #performs a t-test comparing imputed totals to observed only totals
+
+```
+
+Here I am creating a dataframe with the imputed tei total and the rest of the model variables for analysis. I generate an heatmap of missing cores to see the effect of the imputation on tei on the dataset. 
+```{r}
+library(tidyverse)
+#subsetting model variables and creating unique case identifier 
+data <- data %>%
+  dplyr::select(AGE, SEX, EXPERIENCE, EXPERIENCE, PB100K.time, PB.SURFACE, PB.ELEV, AVG.KM, STEU.TTL, STEM.TTL) %>%
+  dplyr::mutate(case = 1:nrow(data))
+
+#subsetting tei total and creating unique case identifier 
+tei.impute <- tei.impute %>%
+  dplyr::select(TEI.TTL) %>%
+  dplyr::mutate(case = 1:nrow(tei.impute))
+
+
+model.data <- merge(data, tei.impute, by = "case") # merging  datasets by unique case id 
+
+vis_miss(model.data)
+```
+
+Unfortunately, there is little we can do to save the STEM and STEU missing values do to their scoring systems (i.e., an erroneous replacement risks heavily influencing the total score). However, we can replace the missing PB.ELEV, AGE, EXPERIENCE, and AVG.KM with their column means to save a little more data.  
+```{r}
+model.data$PB.ELEV[is.na(model.data$PB.ELEV)]<-mean(model.data$PB.ELEV,na.rm=TRUE)
+model.data$AGE[is.na(model.data$AGE)]<-mean(model.data$AGE,na.rm=TRUE)
+model.data$AVG.KM[is.na(model.data$AVG.KM)]<-mean(model.data$AVG.KM,na.rm=TRUE)
+model.data$EXPERIENCE[is.na(model.data$EXPERIENCE)]<-mean(model.data$EXPERIENCE,na.rm=TRUE)
+
+
+vis_miss(model.data)
+```
+
+# Exploratory data analysis 
+Here I recode the variables SEX (i.e., biological sex) and PB.SURFACE (i.e., surface personal best race was completed on) to factors. I then convert participants personal best times from HH:MM:SS format to hour decimal format. Lastly, I produce a table containing a basic overview of the dataframe (e.g., group frequencies, means, sd's).
+```{r}
+library(skimr)
+
+# recoding the categorical variables as factors
+model.data <- model.data%>%
+  dplyr::mutate(SEX = as.factor(SEX),
+         PB.SURFACE = as.factor(PB.SURFACE))
+
+#converting time from HH:MM:SS to a single hour decimal value 
+model.data <- model.data %>%
+  dplyr::mutate(time_seconds = as.numeric(substring(PB100K.time, 1, 2)) * 3600 +
+                                as.numeric(substring(PB100K.time, 4, 5)) * 60 +
+                                as.numeric(substring(PB100K.time, 7, 8)),
+         time_hours = time_seconds / 3600)
+model.data <- model.data %>%
+  dplyr::select(-time_seconds, -PB100K.time) #removing HH:MM:SS and seconds variables  
+names(model.data)[names(model.data) == "time_hours"] <- "PB100k.hours" # renaming time_hours 
+
+
+#prducing a descriptive table providing a basic overview of the dataframe
+skim(model.data)
+
+
+```
+
+Here I create scatter plots displaying an Y~X relationship. The plot contains marginal histograms to check for normality, a line of best fit representing the correlation, a shaded area representing its error, and the the correlation stat along with its p value. IN the plots displayed we can see a negligible positive correlation between trait emotional intelligence and 100km personal best time; and a low negative correlation between the number of kilometers run per week. This means individuals with lower emotional intelligence and who run a greater number of weekly kilometers run faster 100km personal bests. 
+
+NOTE: only two plots are shown and interpreted to serve as examples. In practice the rest of the data was explored in a similar fashion.  
+```{r}
+library(ggplot2)
+library(ggExtra)
+
+correlation <- cor.test(model.data$TEI.TTL, model.data$PB100k.hours)
+# Extract the correlation coefficient and p-value
+cor_coef <- correlation$estimate
+p_value <- correlation$p.value
+# Create the combined text object
+combined_text <- paste("r=", round(cor_coef, 2),
+                       "p=", format.pval(p_value, digits = 3))
+#create plot with combine text as title 
+plot<- ggplot(model.data, aes(x = TEI.TTL, y = PB100k.hours)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = T) +
+  labs(x = "TEI.TTL", y = "PB100k.hours", title = combined_text)
+#adding marginal histograms 
+plot<-ggMarginal(plot, type="histogram")
+
+plot
+
+```
+
+
+```{r}
+correlation <- cor.test(model.data$AVG.KM, model.data$PB100k.hours)
+# Extract the correlation coefficient and p-value
+cor_coef <- correlation$estimate
+p_value <- correlation$p.value
+# Create the combined text object
+combined_text <- paste("r=", round(cor_coef, 2),
+                       "p=", format.pval(p_value, digits = 3))
+#create plot with combine text as title 
+plot<- ggplot(model.data, aes(x = AVG.KM, y = PB100k.hours)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = T) +
+  labs(x = "AVG.KM", y = "PB100k.hours", title = combined_text)
+#adding marginal histograms 
+plot<-ggMarginal(plot, type="histogram")
+
+plot
+```
+
+
+
+# Fitting Multiple regresison model 
+I first recode the categorical variable PB.SURFACE into a dichotomous variable where 1 = trail and 0 = all other conditions. This breakdown was chosen as the majority of participants completed their run on the trail leaving relatively few in the other conditions so they needed to be combine for modeling, otherwise PB.SURFACE would have been dummy coded. PB100k.hours, PB.ELEV (i.e., elevation gain over the run  in meters), and AVG.KM (i.e., the average number of kilometers per week run by participants) were standardized due to their relatively large scales. I then proceed to fit the multiple regression model. 
+```{r}
+# Create a new two-category variable
+PB.SURFACE2 <- ifelse(model.data$PB.SURFACE %in% "Trail", "1", "0")
+model.data$PB.SURFACE2 <- as.numeric(PB.SURFACE2) 
+
+#standardizing data
+model.data$PB100k.hours<- scale(model.data$PB100k.hours)
+model.data$PB.ELEV<- scale(model.data$PB.ELEV)
+model.data$AVG.KM<- scale(model.data$AVG.KM)
+
+#subseting complete cases only
+model.data <- model.data[complete.cases(model.data), ]
+
+#fitting multiple regression model 
+y_mod <- lm(PB100k.hours ~ AGE + SEX + PB.SURFACE2 + EXPERIENCE+PB.ELEV + TEI.TTL + STEU.TTL + STEM.TTL + AVG.KM, data = model.data) 
+summary(y_mod)
+
+```
+
+Here I evaluate the accuracy of the model by first, plotting the predicted values against the observed values. I then plot the residuals on a QQplot to examine for normality. W can see that the model has a large amount of residual variance as the R2 is only .30 (adjR2 = .26) meaning the model is fairly inaccurate (not uncommon in psychology and social sciences), specifically, when looking at the predicted vs observed plot the model sees to underestimate 100km personal best times. Despite the large amount of error, the error is normally distributed meaning the model will consistently underestimate times across values of the predictor. 
+```{r}
+library(ggplot2)
+#model evaluation ploting predicted vs observed 
+yhat <- as.data.frame(predict(y_mod))#getting y-hat values 
+model.data = model.data%>%
+  mutate(PB100km.P = yhat$`predict(y_mod)`)# transferring m-hat values to model data for plotting 
+# Create the density plot with overlapping distributions
+ggplot(model.data, aes(x = PB100k.hours, fill = "PB100k.hours")) +
+  geom_density(alpha = 0.5) +
+  geom_density(aes(x = PB100km.P, fill = "PB100km.P"), alpha = 0.5) +
+  labs(x = "Value", y = "Density") +
+  scale_fill_manual(values = c("PB100k.hours" = "blue", "PB100km.P" = "red")) +
+  theme_minimal()
+
+
+# model evaluation plotting model residuals 
+library(car)
+residuals <- residuals(y_mod)
+qqPlot(residuals)
+```
+
+
+# Conclusions 
+Based on the results from the multiple regression model displayed in the figure below it appears that the best predictors of 100km ultra-marathon times are the number of kilometers run per week and course features such as the type of terrain and amount of elevation. Specifically, running more kilometers per week and racing on a flatter course consisting of road or track contribute to faster times. Males appear to be marginally faster as well. Counter to the hypothesis, emotional regulation did not contribute to faster ultra marathon times. The sheer physical demand of an ultra marathon may negate the performance benefits of emotional intelligence in terms of pure speed, it would be interesting to test if greater emotional regulation contributed to a greater likelihood of finishing a race due to the notoriously high 'did not finish' rates reported at ultra marathon events. Within this context the performance benefit of high emotional regulation would be resisting the urge to quit no matter how long it takes to reach the finish l, an achievement in its own right.  
+
+```{r}
+library(DiagrammeR)
+grViz("
+digraph SEM {
+
+graph [layout = neato,
+       overlap = true,
+       outputorder = edgesfirst]
+
+node [shape = rectangle,
+      fontname='Calibri',
+      fontsize=14];
+edge [fontsize=14,
+      fontname='Calibri']
+
+a [pos = '-1.5,-2!', label = 'PB100km.hours']
+b [pos = '4,2!', label = 'AGE']
+c [pos = '3,2!', label = 'SEX']
+d [pos = '1.5,2!', label = 'PB.SURFACE']
+e [pos = '0,2!', label = 'EXPERINCE']
+f [pos = '-1.5,2!', label = 'PB.ELEV']
+g [pos = '-2.75,2!', label = 'TEI.TTL']
+h [pos = '-4,2!', label = 'STEU.TTL']
+i [pos = '-5.25,2!', label = 'STEM.TTL']
+j [pos = '-6.5,2!', label = 'AVG.KM']
+
+b->a [label = '.01,\n p =.07']
+c->a [label = '.30, \np =.03']
+d->a [label = '.53, \np =.001']
+e->a [label = '-.01, \np =.01']
+f->a [label = '.20,\n p =.005']
+g->a [label = '.14, \np =.16']
+h->a [label = '.01,\n p =.64']
+i->a [label = '-.01,\n p =.81']
+j->a [label = '-.35,\n p <.001']
+}")
+```
